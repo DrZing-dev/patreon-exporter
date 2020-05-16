@@ -199,11 +199,16 @@ sub _process_patrons {
       $user->{attributes}->{social_connections}->{discord} ||= {};
       my $discord_id = $user->{attributes}->{social_connections}->{discord}->{user_id};
 
-      if ($discord_id) {
-        push @patrons, $DISCORD_USERS{$discord_id} || $member->{attributes}->{full_name} . " ($discord_id not in Discord server)";
-      }
-      else {
-        push @patrons, $member->{attributes}->{full_name} . " (no Discord link)";
+      # Full name auto-fallback is a security concern
+      # if ($discord_id) {
+      #   push @patrons, $DISCORD_USERS{$discord_id} || $member->{attributes}->{full_name} . " ($discord_id not in Discord server)";
+      # }
+      # else {
+      #   push @patrons, $member->{attributes}->{full_name} . " (no Discord link)";
+      # }
+
+      if ($discord_id && $DISCORD_USERS{$discord_id}) {
+        push @patrons, $DISCORD_USERS{$discord_id};
       }
     }
 
