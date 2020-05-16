@@ -5,10 +5,6 @@ their Discord accounts and Discord usernames will be exported by default, with a
 
 Only active patrons are displayed
 
-## Running in Docker
-
-TODO
-
 ## Config
 
 Copy patreon.conf.example to patreon.conf and edit as needed.
@@ -25,6 +21,14 @@ Protect your secret and token values!
 2. Install Mojolicious from CPAN with `cpan Mojolicious`. This is the only dependency.
 3. `perl patreon.pl daemon` will start a web server on localhost:3000. You will need to adjust the Patreon redirect_uri config to match.
 
+## Running in Docker
+
+`docker.sh` will build and run a Docker image, with the server exposed on port 8080.
+
 ## Limitations
 
-1. The Discord members API call is limited to 1000 users. If your server is larger than this, the code will need refactored to paginate this call.
+* The Discord members API call is limited to 1000 users. If your server is larger than this, the code will need refactored to paginate this call.
+
+## Future Ideas
+
+* Webhook support to email yourself an auto-updated list.
