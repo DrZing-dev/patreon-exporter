@@ -207,9 +207,6 @@ sub _process_patrons {
       }
     }
 
-    # XXX for testing
-    push @patrons, values %DISCORD_USERS;
-
     $entry->{patrons} = [ sort @patrons ];
 
     # string with mid dots for Star Wars version
