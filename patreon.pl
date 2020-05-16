@@ -111,7 +111,7 @@ get '/patrons', sub {
     return $c->redirect_to('/');
   };
 
-  my $id = $c->param('id') || do {
+  my $id = $c->stash->{id} = $c->param('id') || do {
     return $c->reply->exception("Missing id param");
   };
 
@@ -158,7 +158,8 @@ get '/patrons', sub {
       return $c->reply->exception($patreon_tx->[0]->result->body);
     }
 
-    return $c->render(template => 'patrons', tiers => $tier_list);
+    my $template = $c->param("template") || "patrons";
+    return $c->render(template => $template, tiers => $tier_list);
   })->catch(sub {
     my $err = shift;
     _debug_dump("promise catch", $err);
@@ -206,7 +207,14 @@ sub _process_patrons {
       }
     }
 
+    # XXX for testing
+    push @patrons, values %DISCORD_USERS;
+
     $entry->{patrons} = [ sort @patrons ];
+
+    # string with mid dots for Star Wars version
+    $entry->{patrons_str} = join(" \N{MIDDLE DOT} ", @{$entry->{patrons}});
+
     push @{$tier_list}, $entry;
   }
 

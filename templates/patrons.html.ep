@@ -1,6 +1,8 @@
 <html>
   <head><title>Patreon Exporter - Patrons</title></head>
   <body>
+    <div><a href="/patrons?id=<%= $id %>&template=patrons-star-wars">Star Wars crawl version</a></div>
+
   <% for my $tier (@{$tiers}) { %>
     <h2><%= $tier->{title} %> ($<%= $tier->{amount} %>)</h2>
     <div><ul>
