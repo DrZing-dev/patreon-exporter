@@ -25,6 +25,10 @@ Protect your secret and token values!
 
 `docker.sh` will build and run a Docker image, with the server exposed on port 8080.
 
+## Using SSL
+
+The Docker version supports SSL if you provide a keypair. See ssl/README.md for setup instructions.
+
 ## Limitations
 
 * The Discord members API call is limited to 1000 users. If your server is larger than this, the code will need refactored to paginate this call.

@@ -27,4 +27,12 @@
   
   # if set, will log API response JSON to a file for use in debugging
   debug_dump_file => "debug.json",
+
+  # produdction-quality server used in Docker container with SSL support
+  hypnotoad => {
+    listen => [
+      $ENV{ENABLE_SSL} ? "https://*:8443?cert=/mojo/ssl/fullchain.pem&key=/mojo/ssl/privkey.pem" : (),
+      "http://*:8080",
+    ],
+  },
 }

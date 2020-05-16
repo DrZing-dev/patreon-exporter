@@ -14,6 +14,10 @@ RUN carton install --cpanfile /mojo/cpanfile
 
 ENV LIBEV_FLAGS=7
 
-EXPOSE 8080
+# SSL mode requires cert/key to be in ssl/fullchain.pem and ssl/privkey.key
+# See https://certbot.eff.org/instructions for instructions
+ENV ENABLE_SSL=1
+
+EXPOSE 8080 8443
 
 CMD hypnotoad -f /mojo/patreon.pl
