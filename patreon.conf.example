@@ -1,0 +1,30 @@
+{
+  # A registered Patreon client from https://www.patreon.com/portal/registration/register-clients
+  # The redirect URI must be "<server>/auth" and the API version is 2.
+  # Be sure to protect your client_secret!
+
+  patreon => {
+    client_id     => "xxxxxxxxxxxxx",
+    client_secret => "xxxxxxxxxxxxx",
+    redirect_uri  => "http://your.server.com/auth",
+  },
+
+  # A Bot token and the ID of a server the bot has access to.
+  # Be sure to protect your token!
+
+  discord => {
+    token    => "xxxxxxxxxxxxx",
+    guild_id => "1234567890",
+  },
+
+  # secret used for signed cookies, add new secret to the front for rotation
+  cookie_secrets => ["changeme"],
+
+  # runtime mode
+  # "development" will produce detailed error messages with sensitive debug information
+  # "production" will render basic error pages
+  runtime_mode => "production",
+  
+  # if set, will log API response JSON to a file for use in debugging
+  debug_dump_file => "debug.json",
+}

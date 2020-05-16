@@ -1,0 +1,7 @@
+<html>
+  <head><title>Patreon Exporter - Login</title></head>
+  <body>
+    <h2>Patreon Exporter</h2>
+    <p><a href="<%= $auth_url %>">Log in with Patreon</a></p>
+  </body>
+</html>

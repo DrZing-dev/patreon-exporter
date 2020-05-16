@@ -1,0 +1,13 @@
+<html>
+  <head><title>Patreon Exporter - Patrons</title></head>
+  <body>
+  <% for my $tier (@{$tiers}) { %>
+    <h2><%= $tier->{title} %> ($<%= $tier->{amount} %>)</h2>
+    <div><ul>
+    <% for my $username (@{$tier->{patrons}}) { %>
+      <li><%= $username %></li>
+    <% } %>
+    </ul></div>
+  <% } %>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+<html>
+  <head><title>Server error</title></head>
+  <body>
+    <h2>Exception</h2>
+    <p><%= $exception->message %></p>
+  </body>
+</html>
