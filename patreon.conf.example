@@ -4,16 +4,19 @@
   # Be sure to protect your client_secret!
 
   patreon => {
-    client_id     => "xxxxxxxxxxxxx",
-    client_secret => "xxxxxxxxxxxxx",
+    client_id     => "xxxxxxxxxxxxxxx",
+    client_secret => "xxxxxxxxxxxxxxx",
     redirect_uri  => "http://your.server.com/auth",
+
+    # you can overide with your creator token
+    # creator_token => "xxxxxxxxxxxxxxx",
   },
 
   # A Bot token and the ID of a server the bot has access to.
   # Be sure to protect your token!
 
   discord => {
-    token    => "xxxxxxxxxxxxx",
+    token    => "xxxxxxxxxxxxxxx",
     guild_id => "1234567890",
   },
 

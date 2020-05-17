@@ -4,6 +4,13 @@ use Mojolicious::Lite;
 use Mojo::File qw(curfile);
 use Mojo::JSON qw(encode_json);
 
+use constant DEBUG => 0;
+
+my $EMOJI = "[\x{1f300}-\x{1f5ff}\x{1f900}-\x{1f9ff}\x{1f600}-\x{1f64f}\x{1f680}-\x{1f6ff}\x{2600}-"
+  . "\x{26ff}\x{2700}-\x{27bf}\x{1f1e6}-\x{1f1ff}\x{1f191}-\x{1f251}\x{1f004}\x{1f0cf}\x{1f170}-"
+  . "\x{1f171}\x{1f17e}-\x{1f17f}\x{1f18e}\x{3030}\x{2b50}\x{2b55}\x{2934}-\x{2935}\x{2b05}-\x{2b07}\x{2b1b}-"
+  . "\x{2b1c}\x{3297}\x{3299}\x{303d}\x{00a9}\x{00ae}\x{2122}\x{23f3}\x{24c2}\x{23e9}-\x{23ef}\x{25b6}\x{23f8}-\x{23fa}]";
+
 my %DISCORD_USERS = ();
 
 my $config = plugin Config => {file => "patreon.conf"};
@@ -16,8 +23,8 @@ push @{app->renderer->paths}, curfile->sibling("templates");
 get '/' => sub {
   my $c = shift;
 
-  # existing token cookie
-  if ($c->session->{access_token}) {
+  # existing token cookie or override creator access token
+  if (get_token($c)) {
     return $c->redirect_to('/campaigns');
   }
 
@@ -37,7 +44,6 @@ get '/auth' => sub {
       {"Content-Type" => "application/x-www-form-urlencoded"},
       sub {
         my ($ua, $tx) = @_;
-        $c->log->debug("got token response");
 
         if ($tx->result->is_success) {
           $c->session->{access_token} = $tx->result->json->{access_token};
@@ -63,7 +69,7 @@ get '/auth' => sub {
 get '/campaigns' => sub {
   my $c = shift;
 
-  my $token = $c->session->{access_token} || do {
+  my $token = get_token($c) || do {
     $c->log->debug("session expired");
     $c->session(expires => 1); # clear session
     return $c->redirect_to('/');
@@ -79,7 +85,7 @@ get '/campaigns' => sub {
       $c->log->debug("got campaigns response");
 
       if ($tx->result->is_success) {
-        _debug_dump("/campaigns", $tx->result->json);
+        debug_dump("/campaigns", $tx->result->json);
         my $campaigns = [];
         for my $campaign ( @{$tx->result->json->{data}} ) {
           if ($campaign->{type} eq 'campaign') {
@@ -95,7 +101,7 @@ get '/campaigns' => sub {
       else {
         $c->log->debug($tx->result->body);
         $c->session(expires => 1); # clear session
-        _debug_dump("/campaigns error", $tx->result->body);
+        debug_dump("/campaigns error", $tx->result->body);
         return $c->reply->exception($tx->result->body);
       }
     });
@@ -105,7 +111,7 @@ get '/campaigns' => sub {
 get '/patrons', sub {
   my $c = shift;
 
-  my $token = $c->session->{access_token} || do {
+  my $token = get_token($c) || do {
     $c->log->debug("session expired");
     $c->session(expires => 1); # clear session
     return $c->redirect_to('/');
@@ -124,8 +130,8 @@ get '/patrons', sub {
   );
 
   my $patreon = $c->ua->get_p(
-      "https://www.patreon.com/api/oauth2/v2/campaigns/${id}/members?include=currently_entitled_tiers,user"
-    . "&fields[member]=full_name,currently_entitled_amount_cents,patron_status"
+      "https://www.patreon.com/api/oauth2/v2/campaigns/${id}/members?page[size]=500&include=currently_entitled_tiers,user"
+    . "&fields[member]=full_name,currently_entitled_amount_cents,will_pay_amount_cents,patron_status"
     . "&fields[tier]=title,amount_cents,patron_count"
     . "&fields[user]=social_connections",
     {"Authorization" => "Bearer $token"},
@@ -137,11 +143,11 @@ get '/patrons', sub {
     # process/cache discord users
     if ($discord_tx->[0]->res->is_success) {
       $c->log->debug("got Discord members response");
-      _debug_dump("discord /members", $discord_tx->[0]->result->body);
-      _process_discord($discord_tx->[0]->result->json);
+      debug_dump("discord /members", $discord_tx->[0]->result->body);
+      process_discord($discord_tx->[0]->result->json);
     }
     else {
-      _debug_dump("discord members error", $discord_tx->[0]->result->body);
+      debug_dump("discord members error", $discord_tx->[0]->result->body);
       return $c->reply->exception($discord_tx->[0]->result->body);
     }
 
@@ -149,12 +155,12 @@ get '/patrons', sub {
     my $tier_list;
     if ($patreon_tx->[0]->res->is_success) {
       $c->log->debug("got Patreon members response");
-      _debug_dump("patreon /campaigns/${id}/members", $patreon_tx->[0]->result->json);
-      $tier_list = _process_patrons($patreon_tx->[0]->result->json);
+      debug_dump("patreon /campaigns/${id}/members", $patreon_tx->[0]->result->json);
+      $tier_list = process_patrons($patreon_tx->[0]->result->json);
     }
     else {
       $c->session(expires => 1); # clear session
-      _debug_dump("patreon members error", $patreon_tx->[0]->result->body);
+      debug_dump("patreon members error", $patreon_tx->[0]->result->body);
       return $c->reply->exception($patreon_tx->[0]->result->body);
     }
 
@@ -162,21 +168,22 @@ get '/patrons', sub {
     return $c->render(template => $template, tiers => $tier_list);
   })->catch(sub {
     my $err = shift;
-    _debug_dump("promise catch", $err);
+    debug_dump("promise catch", $err);
      return $c->reply->exception($err);
   })->wait;
 };
 
 app->start;
 
-sub _process_patrons {
+sub process_patrons {
   my $data = shift;
 
-  my @tiers   = sort { $b->{attributes}->{amount_cents} <=> $a->{attributes}->{amount_cents} }
+  my @tiers   = sort { $a->{attributes}->{amount_cents} <=> $b->{attributes}->{amount_cents} }
                 grep { $_->{type} eq 'tier' }   @{$data->{included}};
   my @users   = grep { $_->{type} eq 'user' }   @{$data->{included}};
   my @members = grep { $_->{type} eq 'member' } @{$data->{data}};
 
+  my @episodes = qw(I II III);
   my $tier_list = [];
   for my $tier (@tiers) {
     my $tier_amount_cents = $tier->{attributes}->{amount_cents}; # used to match patrons in this tier
@@ -188,15 +195,16 @@ sub _process_patrons {
     };
 
     my @patrons = ();
+    my @lost = ();
     for my $member (@members) {
-      next unless $member->{attributes}->{patron_status} eq 'active_patron';
+      next unless ($member->{attributes}->{patron_status} // "") eq 'active_patron';
       next unless $member->{attributes}->{currently_entitled_amount_cents} == $tier_amount_cents;
 
       # lookup discord name
       my $member_id  = $member->{relationships}->{user}->{data}->{id};
       my ($user)     = grep { $_->{id} == $member_id } @users;
 
-      $user->{attributes}->{social_connections}->{discord} ||= {};
+      $user->{attributes}->{social_connections}->{discord} //= {};
       my $discord_id = $user->{attributes}->{social_connections}->{discord}->{user_id};
 
       # Full name auto-fallback is a security concern
@@ -208,27 +216,57 @@ sub _process_patrons {
       # }
 
       if ($discord_id && $DISCORD_USERS{$discord_id}) {
-        push @patrons, $DISCORD_USERS{$discord_id};
+        my $username = $DISCORD_USERS{$discord_id};
+        # strip emoji
+        $username =~ s/$EMOJI//g;
+        push @patrons, $username;
+      }
+      else {
+        push @lost, "*** " . $member->{attributes}->{full_name}
+          . ($discord_id ? " ($discord_id not in Discord server)" : " (no Discord link)");
       }
     }
 
     $entry->{patrons} = [ sort @patrons ];
+    $entry->{lost}    = \@lost;
 
-    # string with mid dots for Star Wars version
-    $entry->{patrons_str} = join(" \N{MIDDLE DOT} ", @{$entry->{patrons}});
+    # string with mid dots for Star Wars crawl
+    $entry->{sw_episode} = shift @episodes;
+    $entry->{sw_patrons} = join(" \N{MIDDLE DOT} ", @{$entry->{patrons}});
 
     push @{$tier_list}, $entry;
+  }
+
+  # Did we lose anybody?
+  for my $tier (@{$tier_list}) {
+    my $title = $tier->{title};
+    my $expected = $tier->{patron_conut};
+    my $actual   = scalar @{$tier->{patrons}};
+    if ($expected != $actual) {
+      debug_dump("${title} expected ${expected}, but collected ${actual}");
+    }
+    else {
+      debug_dump("${title} expected ${expected}, collected ${actual}");
+    }
+    # for some reason the patron_conut is wrong sometimes
+    debug_dump(Mojo::Util::dumper($tier->{lost}));
   }
 
   return $tier_list;
 }
 
-sub _process_discord {
+sub process_discord {
   my $data = shift;
 
   for my $user (@{$data}) {
-    $DISCORD_USERS{ $user->{user}->{id} } = $user->{nick} || $user->{user}->{username};
+    $DISCORD_USERS{ $user->{user}->{id} } = $user->{nick} // $user->{user}->{username};
   }
+}
+
+sub get_token {
+  my $c = shift;
+
+  return $config->{patreon}->{creator_token} // $c->session->{access_token};
 }
 
 sub patreon_auth_url {
@@ -249,14 +287,16 @@ sub patreon_verify_url {
   . "&redirect_uri="  . $config->{patreon}->{redirect_uri};
 }
 
-sub _debug_dump {
+sub debug_dump {
   my ($url, $data) = @_;
+
+  return unless DEBUG;
 
   my $file = $config->{debug_dump_file} || return;
 
   open my $fh, '>>', $file || die "Cannot open $file for writing: $!";
   print $fh "$url\n-----------\n";
-  print $fh ref $data ? encode_json($data) : $data;
+  print $fh ref $data ? encode_json($data) : ($data || "");
   print $fh "\n\n";
   close $fh;
 }

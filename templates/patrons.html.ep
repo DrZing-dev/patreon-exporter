@@ -5,11 +5,11 @@
 
   <% for my $tier (@{$tiers}) { %>
     <h2><%= $tier->{title} %> ($<%= $tier->{amount} %>)</h2>
-    <div><ul>
+    <div><ol>
     <% for my $username (@{$tier->{patrons}}) { %>
       <li><%= $username %></li>
     <% } %>
-    </ul></div>
+    </ol></div>
   <% } %>
   </body>
 </html>

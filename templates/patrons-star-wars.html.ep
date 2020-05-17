@@ -70,10 +70,11 @@
       <div class="crawl">
         <% for my $tier (@{$tiers}) { %>
           <div class="title">
+            <h1>Episode <%= $tier->{sw_episode} %>
             <h1><%= $tier->{title} %></h1>
           </div>
 
-          <p><%= $tier->{patrons_str} %></p>
+          <p><%= $tier->{sw_patrons} %></p>
         <% } %>
       </div>
     </section>
