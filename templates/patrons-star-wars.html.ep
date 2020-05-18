@@ -37,7 +37,7 @@
 
       .crawl {
         position: relative;
-        animation: crawl 60s linear infinite;
+        animation: crawl 120s linear infinite;
       }
 
       .crawl > .title {
