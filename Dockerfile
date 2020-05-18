@@ -23,5 +23,4 @@ EXPOSE 8080 8443
 # copies them to /mojo and runs CMD
 VOLUME /mojo/updater
 
-ENTRYPOINT ["/mojo/docker/updater.sh"]
-CMD hypnotoad -f /mojo/patreon.pl
+CMD /mojo/docker/updater.sh
