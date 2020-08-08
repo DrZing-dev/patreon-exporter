@@ -178,7 +178,7 @@ app->start;
 sub process_patrons {
   my $data = shift;
 
-  my @tiers   = sort { $a->{attributes}->{amount_cents} <=> $b->{attributes}->{amount_cents} }
+  my @tiers   = sort { $b->{attributes}->{amount_cents} <=> $a->{attributes}->{amount_cents} }
                 grep { $_->{type} eq 'tier' }   @{$data->{included}};
   my @users   = grep { $_->{type} eq 'user' }   @{$data->{included}};
   my @members = grep { $_->{type} eq 'member' } @{$data->{data}};
@@ -227,7 +227,7 @@ sub process_patrons {
       }
     }
 
-    $entry->{patrons} = [ sort @patrons ];
+    $entry->{patrons} = [ sort { "\L$a" cmp "\L$b" } @patrons ];
     $entry->{lost}    = \@lost;
 
     # string with mid dots for Star Wars crawl
