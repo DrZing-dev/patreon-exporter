@@ -1,8 +1,10 @@
 #!/usr/bin/env perl
 
+use Cache::FileCache;
 use Mojolicious::Lite;
 use Mojo::File qw(curfile);
 use Mojo::JSON qw(encode_json);
+use Mojo::UserAgent;
 
 use constant DEBUG => 0;
 
@@ -12,6 +14,8 @@ my $EMOJI = "[\x{1f300}-\x{1f5ff}\x{1f900}-\x{1f9ff}\x{1f600}-\x{1f64f}\x{1f680}
   . "\x{2b1c}\x{3297}\x{3299}\x{303d}\x{00a9}\x{00ae}\x{2122}\x{23f3}\x{24c2}\x{23e9}-\x{23ef}\x{25b6}\x{23f8}-\x{23fa}]";
 
 my %DISCORD_USERS = ();
+
+my $cache = Cache::FileCache->new;
 
 my $config = plugin Config => {file => "patreon.conf"};
 
@@ -23,57 +27,21 @@ push @{app->renderer->paths}, curfile->sibling("templates");
 get '/' => sub {
   my $c = shift;
 
-  # existing token cookie or override creator access token
-  if (get_token($c)) {
-    return $c->redirect_to('/campaigns');
-  }
-
-  $c->render(template => 'index', auth_url => patreon_auth_url());
+  return $c->redirect_to('/campaigns');
 };
 
-# oauth callback
+# oauth callback (no longer used)
 get '/auth' => sub {
   my $c = shift;
 
-  $c->render_later;
-
-  if (my $code = $c->param('code')) {
-    # verify auth code
-    my $url = patreon_verify_url($code);
-    $c->ua->post( patreon_verify_url($code),
-      {"Content-Type" => "application/x-www-form-urlencoded"},
-      sub {
-        my ($ua, $tx) = @_;
-
-        if ($tx->result->is_success) {
-          $c->session->{access_token} = $tx->result->json->{access_token};
-          $c->session(expiration => $tx->result->json->{expires_in});
-
-          $c->log->debug("Logged in with " . $c->session->{access_token});
-
-          return $c->redirect_to('/campaigns');
-        }
-        else {
-          $c->log->debug($tx->result->body);
-          $c->session(expires => 1); # clear session
-          return $c->reply->exception($tx->result->body);
-        }
-      });
-  }
-  else {
-    return $c->reply->exception("Missing oauth verify code");
-  }
+  return $c->reply->exception("This endpoint intentionally left blank.");
 };
 
 # user's campaigns
 get '/campaigns' => sub {
   my $c = shift;
 
-  my $token = get_token($c) || do {
-    $c->log->debug("session expired");
-    $c->session(expires => 1); # clear session
-    return $c->redirect_to('/');
-  };
+  my $token = get_token($c);
 
   $c->render_later;
 
@@ -99,10 +67,14 @@ get '/campaigns' => sub {
         return $c->render(template => 'campaigns', campaigns => $campaigns);
       }
       else {
-        $c->log->debug($tx->result->body);
-        $c->session(expires => 1); # clear session
         debug_dump("/campaigns error", $tx->result->body);
-        return $c->reply->exception($tx->result->body);
+
+        if ($tx->res->code == 401) {
+          refresh_token($c, $c->req->url);
+        }
+        else {
+          return $c->reply->exception($tx->result->body);
+        }
       }
     });
 };
@@ -111,11 +83,7 @@ get '/campaigns' => sub {
 get '/patrons', sub {
   my $c = shift;
 
-  my $token = get_token($c) || do {
-    $c->log->debug("session expired");
-    $c->session(expires => 1); # clear session
-    return $c->redirect_to('/');
-  };
+  my $token = get_token($c);
 
   my $id = $c->stash->{id} = $c->param('id') || do {
     return $c->reply->exception("Missing id param");
@@ -159,9 +127,14 @@ get '/patrons', sub {
       $tier_list = process_patrons($patreon_tx->[0]->result->json);
     }
     else {
-      $c->session(expires => 1); # clear session
-      debug_dump("patreon members error", $patreon_tx->[0]->result->body);
-      return $c->reply->exception($patreon_tx->[0]->result->body);
+
+
+      if ($patreon_tx->[0]->res->code == 401) {
+        refresh_token($c, $c->req->url);
+      }
+      else {
+        return $c->reply->exception($patreon_tx->[0]->result->body);
+      }
     }
 
     my $template = $c->param("template") || "patrons";
@@ -266,7 +239,29 @@ sub process_discord {
 sub get_token {
   my $c = shift;
 
-  return $config->{patreon}->{creator_token} // $c->session->{access_token};
+  return $cache->get("access_token") // "force refresh";
+}
+
+# refresh creator access token and redirect to self
+sub refresh_token {
+  my ($c, $redirect) = @_;
+
+  $c->ua->post( patreon_refresh_url(),
+    {"Content-Type" => "application/x-www-form-urlencoded"},
+    sub {
+      my ($ua, $tx) = @_;
+
+      debug_dump("refresh token response", $tx->result->body);
+
+      if ($tx->result->is_success) {
+        $cache->set( access_token  => $tx->result->json->{access_token}, $tx->result->json->{expires_in} );
+        $cache->set( refresh_token => $tx->result->json->{refresh_token}, $Cache::Cache::EXPIRES_NEVER );
+        return $c->redirect_to($redirect);
+      }
+      else {
+        return $c->reply->exception($tx->result->body);
+      }
+    });
 }
 
 sub patreon_auth_url {
@@ -285,6 +280,14 @@ sub patreon_verify_url {
   . "&client_id="     . $config->{patreon}->{client_id}
   . "&client_secret=" . $config->{patreon}->{client_secret}
   . "&redirect_uri="  . $config->{patreon}->{redirect_uri};
+}
+
+sub patreon_refresh_url {
+    "https://www.patreon.com/api/oauth2/token"
+  . "?grant_type=refresh_token"
+  . "&refresh_token=" . ($cache->get("refresh_token") // $config->{patreon}->{refresh_token})
+  . "&client_id="     . $config->{patreon}->{client_id}
+  . "&redirect_url="  . $config->{patreon}->{redirect_uri};
 }
 
 sub debug_dump {
